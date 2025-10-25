@@ -1,0 +1,46 @@
+{
+	"compiler": {
+		"version": "0.8.27+commit.40a35a09"
+	},
+	"language": "Solidity",
+	"output": {
+		"abi": [],
+		"devdoc": {
+			"details": "Provides information about the current execution context, including the sender of the transaction and its data. While these are generally available via msg.sender and msg.data, they should not be accessed in such a direct manner, since when dealing with meta-transactions the account sending and paying for execution may not be the actual sender (as far as an application is concerned). This contract is only required for intermediate, library-like contracts.",
+			"kind": "dev",
+			"methods": {},
+			"version": 1
+		},
+		"userdoc": {
+			"kind": "user",
+			"methods": {},
+			"version": 1
+		}
+	},
+	"settings": {
+		"compilationTarget": {
+			"src/KipuBankV2_flattened.sol": "Context"
+		},
+		"evmVersion": "cancun",
+		"libraries": {},
+		"metadata": {
+			"bytecodeHash": "ipfs"
+		},
+		"optimizer": {
+			"enabled": false,
+			"runs": 200
+		},
+		"remappings": []
+	},
+	"sources": {
+		"src/KipuBankV2_flattened.sol": {
+			"keccak256": "0x65439c21be1beeec5a3ba22df2fd6a0da7e10d8aa503b8ebcd0041e41e35a0a1",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://d5f1ba3a7d0c691cf2342fba0531fb8ee3efd0d95bb36ea7c4f5a72c07ecc098",
+				"dweb:/ipfs/QmexAE1uTiPKz1LHNZN3J7SaWShyw35Rw7UQ8BKeQeB3mg"
+			]
+		}
+	},
+	"version": 1
+}
