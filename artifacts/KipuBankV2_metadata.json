@@ -518,7 +518,7 @@
 	},
 	"settings": {
 		"compilationTarget": {
-			"src/KipuBankV21.sol": "KipuBankV2"
+			"src/KipuBankV2.sol": "KipuBankV2"
 		},
 		"evmVersion": "cancun",
 		"libraries": {},
@@ -612,7 +612,7 @@
 				"dweb:/ipfs/QmadRjHbkicwqwwh61raUEapaVEtaLMcYbQZWs9gUkgj3u"
 			]
 		},
-		"src/KipuBankV21.sol": {
+		"src/KipuBankV2.sol": {
 			"keccak256": "0x309443958650b0bfd97271d9fc5e3bd6aafbb92e881cf460b7b1e5bf804f717b",
 			"license": "MIT",
 			"urls": [

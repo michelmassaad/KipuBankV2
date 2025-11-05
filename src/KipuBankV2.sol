@@ -4,9 +4,9 @@ pragma solidity ^0.8.0;
  // --- Imports ---
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
-//import {IOracle} from "./IOracle.sol"; // for testing in Remix environment
-
 
 /**
  * @title KipuBankV2
@@ -15,27 +15,11 @@ import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
  * @dev This contract implements a USD-based deposit cap for ETH using Chainlink Price Feeds.
  * It is owned by the deployer and follows best practices for security and documentation.
  */
-contract KipuBankV2 is Ownable {
-
+contract KipuBankV2 is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
     // =================================================================================================================
-    //                                                   STATE VARIABLES
+    //                                                       STRUCTS
     // =================================================================================================================
-
-    // --- Immutable & Constant Variables ---
-
-    /// @notice The interface to interact with the Chainlink ETH/USD price feed.
-    AggregatorV3Interface public immutable priceFeed;
-    /// @notice The ERC20 token contract for USDC.
-    IERC20 public immutable USDC;
-    /// @notice The global deposit cap for ETH, denominated in USD with 8 decimals.
-    uint256 public immutable BANK_CAP_USD;
-
-    // --- Storage Variables ---
-    /// @notice Total amount of ETH currently deposited in the contract (in wei).
-    uint256 public totalEthDeposited;
-    /// @notice Reentrancy guard flag.
-    bool private locked;
-
     /**
      * @notice A struct to store the balances of each user for supported assets.
      * @param eth The user's balance of ETH in wei.
@@ -45,10 +29,22 @@ contract KipuBankV2 is Ownable {
         uint256 eth;
         uint256 usdc;
     }
-    
+
+    // =================================================================================================================
+    //                                                      VARIABLES
+    // =================================================================================================================
+    /// @notice The interface to interact with the Chainlink ETH/USD price feed.
+    AggregatorV3Interface public immutable priceFeed;
+    /// @notice The ERC20 token contract for USDC.
+    IERC20 public immutable USDC;
+    /// @notice The global deposit cap for ETH, denominated in USD with 8 decimals.
+    uint256 public immutable BANK_CAP_USD;
+    /// @notice Total amount of ETH currently deposited in the contract (in wei).
+    uint256 public totalEthDeposited;
+
     // --- Mappings ---
     /// @notice Mapping of each user’s address to their balances.
-    mapping (address => Balances) public balances;
+    mapping (address => Balances) private balances;
 
     // =================================================================================================================
     //                                                       EVENTS
@@ -57,23 +53,22 @@ contract KipuBankV2 is Ownable {
     /**
      * @notice Emitted when a user successfully deposits ETH or USDC.
      * @param user Address of the depositor.
-     * @param usdcOrEth Type of asset deposited ("USDC" or "ETH").
+     * @param token Type of asset deposited ("USDC" or "ETH").
      * @param amount Amount deposited.
      */
-    event Deposit(address indexed user, string indexed usdcOrEth, uint256 amount);
+    event Deposit(address indexed user, address indexed token, uint256 amount);
 
     /**
      * @notice Emitted when a user successfully withdraws funds.
      * @param user The address of the withdrawer.
-     * @param usdcOrEth Type of asset withdrawn ("USDC" or "ETH").
+     * @param token Type of asset withdrawn ("USDC" or "ETH").
      * @param amount The amount withdrawn in the token's smallest unit.
      */
-    event Withdrawal(address indexed user, string indexed usdcOrEth, uint256 amount);
+    event Withdrawal(address indexed user, address indexed token, uint256 amount);
 
     // =================================================================================================================
     //                                                      ERRORS
     // =================================================================================================================
-
     /// @notice Thrown when total ETH deposits exceed the global bank cap.
     error BankCapExceeded();
     
@@ -84,8 +79,7 @@ contract KipuBankV2 is Ownable {
     error InvalidAmount();
     
     /// @notice Error thrown when a withdrawal transfer fails.
-    /// @param errorData The data returned by the failed call.
-    error WithdrawalFailed(bytes errorData);
+    error WithdrawalFailed();
     
     /// @notice Error for reentrancy guard, thrown when a reentrant call is detected.
     error ReentrantCall();
@@ -98,17 +92,6 @@ contract KipuBankV2 is Ownable {
     // =================================================================================================================
 
     /**
-     * @notice Prevents reentrancy attacks by locking function execution.
-     * @dev If the contract is already executing a `nonReentrant` function, it reverts.
-     */
-     modifier nonReentrant() {
-        if (locked) revert ReentrantCall();
-        locked = true;
-        _;
-        locked = false;
-    }
-
-    /**
      * @notice Ensures the provided amount is greater than zero.
      * @param _amount The amount to check.
      */
@@ -117,6 +100,15 @@ contract KipuBankV2 is Ownable {
         _;
     }
 
+    /**
+     * @notice Checks if a new ETH deposit would exceed the bank's total USD cap.
+     */
+    modifier checkBankCap() {
+        uint256 futureTotalEth = totalEthDeposited + msg.value;
+        uint256 futureTotalEthUSD = getEthValueInUSD(futureTotalEth);
+        if (futureTotalEthUSD > BANK_CAP_USD) revert BankCapExceeded();
+        _;
+    }
     // =================================================================================================================
     //                                                      CONSTRUCTOR
     // =================================================================================================================
@@ -149,20 +141,20 @@ contract KipuBankV2 is Ownable {
      * @notice Deposits ETH into the user's balance, respecting the global USD bank cap.
      * @dev The function is payable and expects ETH to be sent with the transaction.
      */
-    function depositEth() external payable nonZeroAmount(msg.value) {
+    function depositEth() external payable 
+    nonZeroAmount(msg.value) 
+    checkBankCap {
         // --- Checks ---
-        uint256 futureTotalEthValueUSD = getEthValueInUSD(totalEthDeposited + msg.value);
-        if (futureTotalEthValueUSD > BANK_CAP_USD) {
-            revert BankCapExceeded();
-        }
         // --- Effects ---
-        unchecked {
-            totalEthDeposited += msg.value;
-        }
-        balances[msg.sender].eth += msg.value;
+        uint256 currentTotalEth = totalEthDeposited;
+        uint256 currentUserEth = balances[msg.sender].eth;
 
+        unchecked {
+            totalEthDeposited = currentTotalEth + msg.value;
+            balances[msg.sender].eth = currentUserEth + msg.value;
+        }
         // --- Interactions ---
-        emit Deposit(msg.sender,"ETH", msg.value);
+        emit Deposit(msg.sender,address(0), msg.value);
     }
 
     /**
@@ -171,9 +163,15 @@ contract KipuBankV2 is Ownable {
      * @param _amount The amount of USDC (in its smallest unit) to deposit.
      */
     function depositUSDC(uint256 _amount) external nonZeroAmount(_amount) {
-        balances[msg.sender].usdc += _amount;
-        USDC.transferFrom(msg.sender, address(this), _amount);
-        emit Deposit(msg.sender,"USDC", _amount);
+        uint256 currentUserUsdc = balances[msg.sender].usdc;
+        
+        // --- Effects ---
+        unchecked {
+            balances[msg.sender].usdc = currentUserUsdc + _amount;
+        }
+        // --- Interactions ---
+        USDC.safeTransferFrom(msg.sender, address(this), _amount);
+        emit Deposit(msg.sender, address(USDC), _amount);
     }
 
     /**
@@ -181,20 +179,25 @@ contract KipuBankV2 is Ownable {
      * @dev Follows the Checks-Effects-Interactions pattern to prevent reentrancy.
      * @param _amount The amount of ETH (in wei) to withdraw.
      */
-    function withdrawalEth(uint256 _amount) external nonReentrant nonZeroAmount(_amount) {
+    function withdrawEth(uint256 _amount) external 
+    nonReentrant 
+    nonZeroAmount(_amount) 
+    {
+        uint256 currentTotalEth = totalEthDeposited;
+        uint256 currentUserEth = balances[msg.sender].eth;
 
         // --- Checks ---
-        uint256 userBalance = balances[msg.sender].eth; // Read state once to save gas
-        if (_amount > userBalance) revert InsufficientBalance();
+        if (_amount > currentUserEth) revert InsufficientBalance();
 
         // --- Effects ---
-        balances[msg.sender].eth = userBalance - _amount;
-        totalEthDeposited -= _amount;
-
+        unchecked {
+            balances[msg.sender].eth = currentUserEth - _amount;
+            totalEthDeposited = currentTotalEth - _amount;
+        }
+        
         // --- Interaction ---
         _transferEth(payable(msg.sender), _amount);
-
-        emit Withdrawal(msg.sender,"ETH", _amount);
+        emit Withdrawal(msg.sender,address(0), _amount);
     }
     
     /**
@@ -202,18 +205,22 @@ contract KipuBankV2 is Ownable {
      * @param _amount Amount of USDC to withdraw.
      * @dev Uses a reentrancy guard for security.
      */
-    function withdrawalUSDC(uint256 _amount) external nonReentrant nonZeroAmount(_amount) {
-        uint256 userBalance = balances[msg.sender].usdc; // Read state once to save gas
-
-        // --- Checks ---
-        if (_amount > userBalance) revert InsufficientBalance();
-
+    function withdrawalUSDC(uint256 _amount) external 
+    nonReentrant 
+    nonZeroAmount(_amount) 
+    {
+        uint256 currentUserUsdc = balances[msg.sender].usdc;
+       // --- Checks ---
+        if (_amount > currentUserUsdc) revert InsufficientBalance();
+        
         // --- Effects ---
-        balances[msg.sender].usdc = userBalance - _amount;
-        USDC.transfer(msg.sender, _amount);
-
+        unchecked {
+            balances[msg.sender].usdc = currentUserUsdc - _amount;
+        }
+       
         // --- Interaction ---
-        emit Withdrawal(msg.sender,"USDC", _amount);
+        USDC.safeTransfer(msg.sender, _amount);
+        emit Withdrawal(msg.sender, address(USDC) , _amount);
     }
     
     /**
@@ -232,9 +239,6 @@ contract KipuBankV2 is Ownable {
      */
     function getEthValueInUSD(uint256 _ethAmount) public view returns (uint256) {
         (, int256 price, , , ) = priceFeed.latestRoundData();
-        // ETH tiene 18 decimales, el precio del oráculo tiene 8.
-        // La fórmula correcta es (cantidad * precio) / 10**18 para cancelar los decimales de ETH.
-        // El resultado ya queda con los 8 decimales del precio.
         return (uint256(price) * _ethAmount) / 10**18;
     }
 
@@ -249,9 +253,9 @@ contract KipuBankV2 is Ownable {
      * @dev Reverts with WithdrawalFailed if the transfer fails.
      */
     function _transferEth(address payable _to, uint256 _amount) private {
-        (bool success, bytes memory errorData) = _to.call{value: _amount}("");
+        (bool success,) = _to.call{value: _amount}("");
         if (!success) {
-            revert WithdrawalFailed(errorData);
+            revert WithdrawalFailed();
         }
     }
 
