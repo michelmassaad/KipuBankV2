@@ -48,7 +48,7 @@ Permite a los usuarios **depositar y retirar ETH o USDC**, integrando un **lími
 `0x7478bbD7Bb2C64A392b937b592CE8f8DDCc48362`
 
 **📜 Dirección del contrato en etherscan:**  
-[https://sepolia.etherscan.io/address/0x7478bbD7Bb2C64A392b937b592CE8f8DDCc48362](https://sepolia.etherscan.io/address/0x7478bbD7Bb2C64A392b937b592CE8f8DDCc48362)
+[https://sepolia.etherscan.io/address/0x347E546F9Be5A6096B366248B8a04B52D84865E2](https://sepolia.etherscan.io/address/0x347E546F9Be5A6096B366248B8a04B52D84865E2)
 
 **💻 Repositorio:**  
 [https://github.com/michelmassaad/KipuBankV2.git](https://github.com/michelmassaad/KipuBankV2.git)
@@ -111,6 +111,7 @@ _bankCapUSD = límite en USD (ej: 10000)
 
 👤 **Michel Massaad**
 📫 [GitHub – michelmassaad](https://github.com/michelmassaad)
+
 
 
 
