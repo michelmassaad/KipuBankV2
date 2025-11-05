@@ -76,11 +76,16 @@
 			{
 				"inputs": [
 					{
-						"internalType": "bytes",
-						"name": "errorData",
-						"type": "bytes"
+						"internalType": "address",
+						"name": "token",
+						"type": "address"
 					}
 				],
+				"name": "SafeERC20FailedOperation",
+				"type": "error"
+			},
+			{
+				"inputs": [],
 				"name": "WithdrawalFailed",
 				"type": "error"
 			},
@@ -95,9 +100,9 @@
 					},
 					{
 						"indexed": true,
-						"internalType": "string",
-						"name": "usdcOrEth",
-						"type": "string"
+						"internalType": "address",
+						"name": "token",
+						"type": "address"
 					},
 					{
 						"indexed": false,
@@ -139,9 +144,9 @@
 					},
 					{
 						"indexed": true,
-						"internalType": "string",
-						"name": "usdcOrEth",
-						"type": "string"
+						"internalType": "address",
+						"name": "token",
+						"type": "address"
 					},
 					{
 						"indexed": false,
@@ -174,30 +179,6 @@
 						"internalType": "contract IERC20",
 						"name": "",
 						"type": "address"
-					}
-				],
-				"stateMutability": "view",
-				"type": "function"
-			},
-			{
-				"inputs": [
-					{
-						"internalType": "address",
-						"name": "",
-						"type": "address"
-					}
-				],
-				"name": "balances",
-				"outputs": [
-					{
-						"internalType": "uint256",
-						"name": "eth",
-						"type": "uint256"
-					},
-					{
-						"internalType": "uint256",
-						"name": "usdc",
-						"type": "uint256"
 					}
 				],
 				"stateMutability": "view",
@@ -340,7 +321,7 @@
 						"type": "uint256"
 					}
 				],
-				"name": "withdrawalEth",
+				"name": "withdrawEth",
 				"outputs": [],
 				"stateMutability": "nonpayable",
 				"type": "function"
@@ -361,7 +342,7 @@
 		],
 		"devdoc": {
 			"author": "Michel Massaad",
-			"details": "Implements transaction limits, a global deposit cap, custom errors, and follows security best practices.",
+			"details": "This contract implements a USD-based deposit cap for ETH using Chainlink Price Feeds. It is owned by the deployer and follows best practices for security and documentation.",
 			"errors": {
 				"OwnableInvalidOwner(address)": [
 					{
@@ -373,13 +354,27 @@
 						"details": "The caller account is not authorized to perform an operation."
 					}
 				],
-				"WithdrawalFailed(bytes)": [
+				"SafeERC20FailedOperation(address)": [
 					{
-						"params": {
-							"errorData": "The data returned by the failed call."
-						}
+						"details": "An operation with an ERC-20 token failed."
 					}
 				]
+			},
+			"events": {
+				"Deposit(address,address,uint256)": {
+					"params": {
+						"amount": "Amount deposited.",
+						"token": "Type of asset deposited (\"USDC\" or \"ETH\").",
+						"user": "Address of the depositor."
+					}
+				},
+				"Withdrawal(address,address,uint256)": {
+					"params": {
+						"amount": "The amount withdrawn in the token's smallest unit.",
+						"token": "Type of asset withdrawn (\"USDC\" or \"ETH\").",
+						"user": "The address of the withdrawer."
+					}
+				}
 			},
 			"kind": "dev",
 			"methods": {
@@ -391,7 +386,13 @@
 					}
 				},
 				"depositEth()": {
-					"details": "Reverts if the amount is zero or if the deposit would exceed the global bank cap.Follows the checks-effects-interactions pattern."
+					"details": "The function is payable and expects ETH to be sent with the transaction."
+				},
+				"depositUSDC(uint256)": {
+					"details": "The user must call `approve` on the USDC contract to authorize this contract first.",
+					"params": {
+						"_amount": "The amount of USDC (in its smallest unit) to deposit."
+					}
 				},
 				"getBalances(address)": {
 					"params": {
@@ -403,10 +404,10 @@
 				},
 				"getEthValueInUSD(uint256)": {
 					"params": {
-						"_ethAmount": "The amount of ETH in wei (1e18)."
+						"_ethAmount": "Amount of ETH in wei."
 					},
 					"returns": {
-						"_0": "The value in USD, adjusted to 8 decimals."
+						"_0": "Equivalent USD value with 8 decimal precision."
 					}
 				},
 				"owner()": {
@@ -418,26 +419,37 @@
 				"transferOwnership(address)": {
 					"details": "Transfers ownership of the contract to a new account (`newOwner`). Can only be called by the current owner."
 				},
-				"withdrawalEth(uint256)": {
-					"details": "Reverts if the amount is zero, exceeds the withdrawal limit, or if the user has insufficient balance.Follows the checks-effects-interactions pattern.",
+				"withdrawEth(uint256)": {
+					"details": "Follows the Checks-Effects-Interactions pattern to prevent reentrancy.",
 					"params": {
-						"_amount": "The amount to withdraw in wei."
+						"_amount": "The amount of ETH (in wei) to withdraw."
+					}
+				},
+				"withdrawalUSDC(uint256)": {
+					"details": "Uses a reentrancy guard for security.",
+					"params": {
+						"_amount": "Amount of USDC to withdraw."
 					}
 				}
 			},
-			"title": "KipuBank",
+			"title": "KipuBankV2",
 			"version": 1
 		},
 		"userdoc": {
 			"errors": {
 				"BankCapExceeded()": [
 					{
-						"notice": "Error thrown when the total deposits would exceed the bank's global cap."
+						"notice": "Thrown when total ETH deposits exceed the global bank cap."
 					}
 				],
 				"InsufficientBalance()": [
 					{
 						"notice": "Error thrown when a user tries to withdraw more than their balance."
+					}
+				],
+				"InvalidAddress()": [
+					{
+						"notice": "Thrown when a provided address is invalid (zero address)."
 					}
 				],
 				"InvalidAmount()": [
@@ -450,46 +462,63 @@
 						"notice": "Error for reentrancy guard, thrown when a reentrant call is detected."
 					}
 				],
-				"WithdrawalFailed(bytes)": [
+				"WithdrawalFailed()": [
 					{
 						"notice": "Error thrown when a withdrawal transfer fails."
 					}
 				]
 			},
+			"events": {
+				"Deposit(address,address,uint256)": {
+					"notice": "Emitted when a user successfully deposits ETH or USDC."
+				},
+				"Withdrawal(address,address,uint256)": {
+					"notice": "Emitted when a user successfully withdraws funds."
+				}
+			},
 			"kind": "user",
 			"methods": {
 				"BANK_CAP_USD()": {
-					"notice": "The global deposit cap for the entire bank."
+					"notice": "The global deposit cap for ETH, denominated in USD with 8 decimals."
 				},
-				"balances(address)": {
-					"notice": "Mapping from address to user balance."
+				"USDC()": {
+					"notice": "The ERC20 token contract for USDC."
 				},
 				"constructor": {
 					"notice": "Initializes the contract."
 				},
 				"depositEth()": {
-					"notice": "Deposits ETH into the user's balance."
+					"notice": "Deposits ETH into the user's balance, respecting the global USD bank cap."
+				},
+				"depositUSDC(uint256)": {
+					"notice": "Deposits USDC tokens into the user's balance."
 				},
 				"getBalances(address)": {
 					"notice": "Gets the balances of a specific user."
 				},
 				"getEthValueInUSD(uint256)": {
-					"notice": "Converts an amount of ETH (in wei) to its equivalent value in USD."
+					"notice": "Converts an ETH amount to its equivalent USD value."
+				},
+				"priceFeed()": {
+					"notice": "The interface to interact with the Chainlink ETH/USD price feed."
 				},
 				"totalEthDeposited()": {
-					"notice": "The total amount of ETH currently deposited in the contract."
+					"notice": "Total amount of ETH currently deposited in the contract (in wei)."
 				},
-				"withdrawalEth(uint256)": {
-					"notice": "Withdraws ETH from the user's balance."
+				"withdrawEth(uint256)": {
+					"notice": "Withdraws ETH from the user's balance to their address."
+				},
+				"withdrawalUSDC(uint256)": {
+					"notice": "Allows users to withdraw USDC from their account."
 				}
 			},
-			"notice": "A simple banking contract where users can deposit and withdraw ETH.",
+			"notice": "A decentralized bank that supports ETH and USDC deposits and withdrawals.",
 			"version": 1
 		}
 	},
 	"settings": {
 		"compilationTarget": {
-			"src/KipuBankV2.sol": "KipuBankV2"
+			"src/KipuBankV21.sol": "KipuBankV2"
 		},
 		"evmVersion": "cancun",
 		"libraries": {},
@@ -519,12 +548,52 @@
 				"dweb:/ipfs/QmfEckWLmZkDDcoWrkEvMWhms66xwTLff9DDhegYpvHo1a"
 			]
 		},
+		"@openzeppelin/contracts/interfaces/IERC1363.sol": {
+			"keccak256": "0xd5ea07362ab630a6a3dee4285a74cf2377044ca2e4be472755ad64d7c5d4b69d",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://da5e832b40fc5c3145d3781e2e5fa60ac2052c9d08af7e300dc8ab80c4343100",
+				"dweb:/ipfs/QmTzf7N5ZUdh5raqtzbM11yexiUoLC9z3Ws632MCuycq1d"
+			]
+		},
+		"@openzeppelin/contracts/interfaces/IERC165.sol": {
+			"keccak256": "0x0afcb7e740d1537b252cb2676f600465ce6938398569f09ba1b9ca240dde2dfc",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://1c299900ac4ec268d4570ecef0d697a3013cd11a6eb74e295ee3fbc945056037",
+				"dweb:/ipfs/Qmab9owJoxcA7vJT5XNayCMaUR1qxqj1NDzzisduwaJMcZ"
+			]
+		},
+		"@openzeppelin/contracts/interfaces/IERC20.sol": {
+			"keccak256": "0x1a6221315ce0307746c2c4827c125d821ee796c74a676787762f4778671d4f44",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://1bb2332a7ee26dd0b0de9b7fe266749f54820c99ab6a3bcb6f7e6b751d47ee2d",
+				"dweb:/ipfs/QmcRWpaBeCYkhy68PR3B4AgD7asuQk7PwkWxrvJbZcikLF"
+			]
+		},
+		"@openzeppelin/contracts/security/ReentrancyGuard.sol": {
+			"keccak256": "0xa535a5df777d44e945dd24aa43a11e44b024140fc340ad0dfe42acf4002aade1",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://41319e7f621f2dc3733511332c4fd032f8e32ad2aa7fd6f665c19741d9941a34",
+				"dweb:/ipfs/QmcYR3bd862GD1Bc7jwrU9bGxrhUu5na1oP964bDCu2id1"
+			]
+		},
 		"@openzeppelin/contracts/token/ERC20/IERC20.sol": {
 			"keccak256": "0x74ed01eb66b923d0d0cfe3be84604ac04b76482a55f9dd655e1ef4d367f95bc2",
 			"license": "MIT",
 			"urls": [
 				"bzz-raw://5282825a626cfe924e504274b864a652b0023591fa66f06a067b25b51ba9b303",
 				"dweb:/ipfs/QmeCfPykghhMc81VJTrHTC7sF6CRvaA1FXVq2pJhwYp1dV"
+			]
+		},
+		"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol": {
+			"keccak256": "0x982c5cb790ab941d1e04f807120a71709d4c313ba0bfc16006447ffbd27fbbd5",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://8150ceb4ac947e8a442b2a9c017e01e880b2be2dd958f1fa9bc405f4c5a86508",
+				"dweb:/ipfs/QmbcBmFX66AY6Kbhnd5gx7zpkgqnUafo43XnmayAM7zVdB"
 			]
 		},
 		"@openzeppelin/contracts/utils/Context.sol": {
@@ -535,12 +604,20 @@
 				"dweb:/ipfs/Qmax9WHBnVsZP46ZxEMNRQpLQnrdE4dK8LehML1Py8FowF"
 			]
 		},
-		"src/KipuBankV2.sol": {
-			"keccak256": "0xd9c3218e0a718b5b3b03c8a9dece950c512bed6eeaf4a981f7a179770d07273b",
+		"@openzeppelin/contracts/utils/introspection/IERC165.sol": {
+			"keccak256": "0x8891738ffe910f0cf2da09566928589bf5d63f4524dd734fd9cedbac3274dd5c",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://2c50c686fdfca0e1e0e9033021d3c17f415fb41d7f0c1220d85ec5a0b2a32440",
-				"dweb:/ipfs/QmUhSpfxqExvLhFfz1A5i93BiSJVZiTr7u2BWyUKXQTdLk"
+				"bzz-raw://971f954442df5c2ef5b5ebf1eb245d7105d9fbacc7386ee5c796df1d45b21617",
+				"dweb:/ipfs/QmadRjHbkicwqwwh61raUEapaVEtaLMcYbQZWs9gUkgj3u"
+			]
+		},
+		"src/KipuBankV21.sol": {
+			"keccak256": "0x309443958650b0bfd97271d9fc5e3bd6aafbb92e881cf460b7b1e5bf804f717b",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://ac2706e78b4773c2c0c11a2e4bc8a27c93e5b678301793a0dd1d55bae0c5caf9",
+				"dweb:/ipfs/QmVUnP6dw95fb4s8Co1X6qBhTJQb9oPJEkpGJ62ZhpAvHm"
 			]
 		}
 	},
